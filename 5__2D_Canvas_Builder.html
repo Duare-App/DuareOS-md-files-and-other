@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DuareOS — Floor Plan Builder</title>
+<style>
+:root {
+  --sb-bg:    #1b1814;
+  --sb-hi:    #231f1b;
+  --sb-bdr:   #2e2924;
+  --sb-muted: #7a6e62;
+  --sb-dim:   #3d3630;
+  --sb-txt:   #e8ddd0;
+  --acc:      #b5803a;
+  --acc-h:    #9d6d2e;
+  --cv-floor: #ede9df;
+  --cv-wall:  #1a1712;
+  --cv-grid:  rgba(40,28,16,0.065);
+  --t-frame:  #1a1512;
+  --t-cloth:  #f3eee5;
+  --t-chair:  #3d3028;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--sb-bg); color:var(--sb-txt);
+  height:100vh; display:flex; flex-direction:column; overflow:hidden;
+}
+
+/* ── Header ── */
+.hdr {
+  background:var(--sb-bg); border-bottom:1px solid var(--sb-bdr);
+  padding:11px 18px; display:flex; align-items:center; gap:10px; flex-shrink:0;
+}
+.hdr-logo { font-size:16px; font-weight:800; color:var(--acc); letter-spacing:-0.02em; }
+.hdr-sep  { color:var(--sb-dim); }
+.hdr-ttl  { font-size:13px; color:var(--sb-muted); }
+.hdr-acts { margin-left:auto; display:flex; gap:7px; }
+
+/* ── Buttons ── */
+.btn {
+  padding:7px 14px; border-radius:6px; font-size:13px; font-weight:500;
+  cursor:pointer; border:none; transition:all .15s; font-family:inherit;
+}
+.btn-acc   { background:var(--acc); color:#fff; }
+.btn-acc:hover { background:var(--acc-h); }
+.btn-ghost { background:transparent; color:var(--sb-muted); border:1px solid var(--sb-bdr); }
+.btn-ghost:hover { background:var(--sb-dim); color:var(--sb-txt); }
+.btn-del   { background:transparent; color:#c86868; border:1px solid #3a1a1a; }
+.btn-del:hover   { background:#3a1a1a; }
+.btn-full { width:100%; }
+.btn-sm   { padding:5px 11px; font-size:12px; }
+.btn-xs   { padding:3px 8px; font-size:11px; }
+
+/* ── Layout ── */
+.layout { display:flex; flex:1; overflow:hidden; }
+
+/* ── Sidebar ── */
+.sb {
+  width:268px; background:var(--sb-bg); border-right:1px solid var(--sb-bdr);
+  display:flex; flex-direction:column; overflow:hidden; flex-shrink:0;
+}
+.sb-sec { padding:13px 13px 11px; border-bottom:1px solid var(--sb-bdr); }
+.sec-lbl {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--sb-dim); margin-bottom:10px;
+}
+
+/* ── Form ── */
+.frow { display:flex; gap:7px; margin-bottom:7px; }
+.fg   { flex:1; display:flex; flex-direction:column; gap:3px; }
+.fl   { font-size:11px; color:var(--sb-muted); }
+.fi,.fs {
+  background:#100e0c; border:1px solid var(--sb-bdr); border-radius:6px;
+  padding:6px 9px; color:var(--sb-txt); font-size:13px;
+  width:100%; outline:none; font-family:inherit; transition:border-color .2s;
+}
+.fi:focus,.fs:focus { border-color:var(--acc); }
+.fs option { background:var(--sb-bg); }
+
+/* ── Unplaced list ── */
+.up-hdr { padding:10px 13px 8px; border-bottom:1px solid var(--sb-bdr); flex-shrink:0; }
+.up-list { flex:1; overflow-y:auto; padding:7px; }
+.up-list::-webkit-scrollbar { width:3px; }
+.up-list::-webkit-scrollbar-thumb { background:var(--sb-bdr); border-radius:2px; }
+
+.up-item {
+  background:#130f0c; border:1px solid var(--sb-bdr); border-radius:7px;
+  padding:8px 10px; margin-bottom:5px; cursor:grab;
+  display:flex; align-items:center; gap:8px;
+  transition:border-color .15s,background .15s; user-select:none;
+}
+.up-item:hover  { border-color:var(--acc); background:var(--sb-hi); }
+.up-item:active { cursor:grabbing; }
+.up-item.dragging { opacity:.3; }
+.t-thumb { flex-shrink:0; line-height:0; }
+.t-inf   { flex:1; min-width:0; }
+.t-nm    { font-size:13px; font-weight:600; }
+.t-mt    { font-size:11px; color:var(--sb-muted); margin-top:1px; }
+
+.empty-st {
+  text-align:center; padding:28px 12px;
+  color:var(--sb-dim); font-size:12px; line-height:1.8;
+}
+
+/* ── Canvas wrapper ── */
+.cv-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.cv-bar  {
+  padding:8px 16px; display:flex; align-items:center; gap:10px;
+  border-bottom:1px solid var(--sb-bdr); background:var(--sb-bg);
+  flex-shrink:0; font-size:12px; color:var(--sb-muted);
+}
+.cv-bar b { color:var(--sb-txt); }
+.leg-item { display:flex; align-items:center; gap:5px; font-size:11px; }
+.leg-dot  { width:9px; height:9px; border-radius:2px; display:inline-block; }
+.cv-stats { margin-left:auto; }
+
+.cv-scroll {
+  flex:1; overflow:auto;
+  background:#111009;
+}
+.cv-scroll::-webkit-scrollbar { width:6px; height:6px; }
+.cv-scroll::-webkit-scrollbar-thumb { background:var(--sb-bdr); border-radius:3px; }
+.cv-scroll::-webkit-scrollbar-track { background:#0d0b08; }
+
+/* ── Drop zone (the floor) ── */
+.dz {
+  position:relative; width:1400px; height:900px;
+  background-color:#ede9df;
+  background-image:
+    linear-gradient(var(--cv-grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--cv-grid) 1px,transparent 1px);
+  background-size:40px 40px;
+  border:4px solid var(--cv-wall);
+  box-shadow:inset 0 0 0 10px rgba(26,23,18,.06);
+}
+.dz.dragover { background-color:#e6e2d6; }
+
+/* ── Drop hint ── */
+.dz-hint {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  text-align:center; pointer-events:none; user-select:none;
+}
+.dz-hint-ico { font-size:64px; opacity:.07; margin-bottom:14px; }
+.dz-hint-ttl { font-size:15px; font-weight:600; color:rgba(26,23,18,.13); }
+.dz-hint-sub { font-size:12px; color:rgba(26,23,18,.09); margin-top:5px; }
+
+/* ── Placed table ── */
+.pt {
+  position:absolute; cursor:move; user-select:none; z-index:10;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.2));
+  transition:filter .12s;
+}
+.pt:hover { z-index:20; filter:drop-shadow(0 5px 14px rgba(0,0,0,.32)); }
+.pt:hover .pt-acts { opacity:1; pointer-events:all; }
+
+.pt-acts {
+  position:absolute; top:-28px; left:50%;
+  transform:translateX(-50%);
+  display:flex; gap:3px;
+  opacity:0; pointer-events:none; transition:opacity .12s;
+  white-space:nowrap;
+}
+.pt-act {
+  background:var(--sb-bg); border:1px solid var(--sb-bdr);
+  color:var(--sb-muted); border-radius:4px;
+  padding:3px 8px; font-size:11px; cursor:pointer;
+  font-family:inherit; transition:all .12s;
+}
+.pt-act:hover       { background:var(--sb-hi); color:var(--sb-txt); }
+.pt-act.qr          { color:var(--acc); border-color:#3e2e16; }
+.pt-act.qr:hover    { background:#261c0a; }
+.pt-act.rm          { color:#c86868; border-color:#3a1a1a; }
+.pt-act.rm:hover    { background:#3a1a1a; }
+
+/* ── QR Modal ── */
+.overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.76);
+  display:flex; align-items:center; justify-content:center;
+  z-index:200; backdrop-filter:blur(6px);
+}
+.overlay.hidden { display:none; }
+.modal {
+  background:var(--sb-hi); border:1px solid var(--sb-bdr);
+  border-radius:12px; padding:22px; width:308px; text-align:center;
+}
+.m-ttl { font-size:15px; font-weight:700; margin-bottom:3px; }
+.m-sub { font-size:12px; color:var(--sb-muted); margin-bottom:15px; }
+.qr-box { background:#fff; border-radius:8px; padding:13px; display:inline-block; margin-bottom:13px; }
+.qr-url { font-size:11px; color:var(--sb-muted); background:#100e0c; border-radius:6px; padding:7px 11px; word-break:break-all; margin-bottom:13px; }
+.m-foot { display:flex; gap:7px; }
+.m-foot .btn { flex:1; }
+
+/* ── Toasts ── */
+.tstack { position:fixed; bottom:16px; right:16px; z-index:300; display:flex; flex-direction:column; gap:6px; }
+.toast  { background:var(--sb-hi); border:1px solid var(--sb-bdr); border-radius:7px; padding:8px 13px; font-size:13px; animation:tin .18s ease; }
+.toast.ok  { border-left:3px solid #6a9e72; }
+.toast.err { border-left:3px solid #b06060; }
+@keyframes tin { from{transform:translateX(14px);opacity:0} to{transform:translateX(0);opacity:1} }
+
+/* ── Mode toggle ── */
+.mode-row { display:flex; gap:5px; margin-bottom:10px; }
+.mode-btn {
+  flex:1; padding:6px 0; border-radius:6px; font-size:12px; font-weight:500;
+  cursor:pointer; border:1px solid var(--sb-bdr); background:transparent;
+  color:var(--sb-muted); font-family:inherit; transition:all .15s; text-align:center;
+}
+.mode-btn.active { background:var(--acc); color:#fff; border-color:var(--acc); }
+.mode-btn:not(.active):hover { background:var(--sb-dim); color:var(--sb-txt); }
+.wall-hint { font-size:11px; color:var(--sb-muted); line-height:1.6; }
+.wall-hint b { color:var(--sb-txt); }
+.wall-count { font-size:11px; color:var(--sb-muted); margin-top:9px; }
+
+/* ── Wall elements ── */
+.wall {
+  position:absolute; background:#2a2018; border-radius:2px;
+  z-index:8; cursor:move; user-select:none; transition:background .12s;
+}
+.wall:hover { background:#3e3028; }
+.wall:hover .wall-del { opacity:1; pointer-events:all; }
+.wall-del {
+  position:absolute; top:-20px; right:-2px;
+  background:var(--sb-bg); border:1px solid #3a1a1a; color:#c86868;
+  border-radius:4px; width:20px; height:20px; font-size:11px;
+  cursor:pointer; opacity:0; pointer-events:none; transition:opacity .12s;
+  display:flex; align-items:center; justify-content:center; font-family:inherit;
+}
+.wall-preview {
+  position:absolute; background:var(--acc); opacity:.45;
+  border-radius:2px; z-index:15; pointer-events:none;
+}
+
+/* Draw mode: crosshair cursor, disable table interaction */
+.dz.draw-mode { cursor:crosshair; }
+.dz.draw-mode .pt { pointer-events:none; }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <span class="hdr-logo">DuareOS</span>
+  <span class="hdr-sep">/</span>
+  <span class="hdr-ttl">Floor Plan Builder — Table Setup</span>
+  <div class="hdr-acts">
+    <button class="btn btn-ghost btn-sm" onclick="clearAll()">Clear</button>
+    <button class="btn btn-acc btn-sm" onclick="saveLayout()">Save Layout</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <aside class="sb">
+    <div class="sb-sec">
+      <div class="sec-lbl">Create Table</div>
+      <div class="frow">
+        <div class="fg"><label class="fl">Table #</label>
+          <input id="fNum" class="fi" type="text" placeholder="1, A1, B2…"></div>
+        <div class="fg"><label class="fl">Seats</label>
+          <input id="fCap" class="fi" type="number" placeholder="4" min="1" max="20"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label class="fl">Shape</label>
+          <select id="fShape" class="fs">
+            <option value="round">Round</option>
+            <option value="square">Square</option>
+            <option value="rect">Rectangle</option>
+            <option value="booth">Booth (U)</option>
+          </select></div>
+        <div class="fg"><label class="fl">Zone</label>
+          <select id="fZone" class="fs">
+            <option>Main Hall</option>
+            <option>Outdoor</option>
+            <option>Private</option>
+            <option>Bar</option>
+          </select></div>
+      </div>
+      <button class="btn btn-acc btn-full" onclick="createTable()">+ Add to Unplaced</button>
+    </div>
+
+    <div class="sb-sec">
+      <div class="sec-lbl">Wall Tool</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="modeSelectBtn" onclick="setMode('select')">↖ Select</button>
+        <button class="mode-btn"        id="modeWallBtn"   onclick="setMode('wall')">✏ Draw Wall</button>
+      </div>
+      <div class="wall-hint">
+        Switch to <b>Draw Wall</b>, then click &amp; drag on the floor.<br>
+        Drag sideways → horizontal &nbsp;·&nbsp; drag up/down → vertical.<br>
+        Walls snap to grid and can be repositioned.
+      </div>
+      <div class="wall-count" id="wallCount">0 walls</div>
+    </div>
+
+    <div class="up-hdr">
+      <div class="sec-lbl" id="upTitle">Unplaced Tables (0)</div>
+    </div>
+    <div class="up-list" id="upList">
+      <div class="empty-st" id="emptyMsg">No tables yet.<br>Define above →<br>then drag onto the map.</div>
+    </div>
+  </aside>
+
+  <div class="cv-wrap">
+    <div class="cv-bar">
+      <div class="leg-item">
+        <span class="leg-dot" style="background:#3d3028;border:1px solid #5a4838;"></span>Placed
+      </div>
+      <div class="leg-item">
+        <span class="leg-dot" style="background:var(--sb-bdr);"></span>Unplaced
+      </div>
+      <div class="cv-stats">Placed: <b id="sPl">0</b> &nbsp;·&nbsp; Total: <b id="sTo">0</b></div>
+    </div>
+    <div class="cv-scroll">
+      <div class="dz" id="dz">
+        <div class="dz-hint" id="dzHint">
+          <div class="dz-hint-ico">🪑</div>
+          <div class="dz-hint-ttl">Drag tables from the sidebar</div>
+          <div class="dz-hint-sub">Drop here to place on the floor map</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- QR Modal -->
+<div class="overlay hidden" id="qrOv">
+  <div class="modal">
+    <div class="m-ttl" id="qrTtl">QR Code</div>
+    <div class="m-sub" id="qrSub"></div>
+    <div class="qr-box"><div id="qrEl"></div></div>
+    <div class="qr-url" id="qrUrl"></div>
+    <div class="m-foot">
+      <button class="btn btn-ghost" onclick="closeQr()">Close</button>
+      <button class="btn btn-acc"   onclick="dlQr()">Download PNG</button>
+    </div>
+  </div>
+</div>
+
+<div class="tstack" id="toasts"></div>
+
+<script>
+/* ── Load QRCode lib ── */
+(()=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'; document.head.appendChild(s); })();
+
+/* ── Constants ── */
+const TC = { frame:'#1a1512', cloth:'#f2ede4', chair:'#3a2c20', txt:'#1a1512' };
+const GRID = 20;
+
+/* ── State ── */
+let tables=[], nextId=1, activeQr=null;
+let walls=[], wallNextId=1, drawMode=false;
+let drawStart=null, drawPreview=null;
+const WALL_THICK=12, WALL_MIN=20;
+const dz = document.getElementById('dz');
+
+/* ══════════════════════════════════════════
+   SVG TABLE RENDERERS (top-view furniture)
+══════════════════════════════════════════ */
+
+/* Round table — chairs as circles radiating out */
+function svgRound(num, cap, W, H) {
+  const cx=W/2, cy=H/2;
+  const R=Math.min(W,H)*0.265;
+  const cr=Math.min(W,H)*0.088;
+  const dist=R+cr+Math.min(W,H)*0.055;
+  const n=Math.min(Math.max(+cap||4,1),10);
+  let ch='';
+  for(let i=0;i<n;i++){
+    const a=(i/n)*Math.PI*2-Math.PI/2;
+    ch+=`<circle cx="${f(cx+dist*Math.cos(a))}" cy="${f(cy+dist*Math.sin(a))}" r="${f(cr)}" fill="${TC.chair}"/>`;
+  }
+  return svg(W,H,`${ch}
+    <circle cx="${cx}" cy="${cy}" r="${f(R)}" fill="${TC.frame}"/>
+    <circle cx="${cx}" cy="${cy}" r="${f(R-2.5)}" fill="${TC.cloth}"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle"
+      font-size="${f(Math.min(W,H)*.13)}" font-weight="700" fill="${TC.txt}" font-family="system-ui">${num}</text>`);
+}
+
+/* Square table — 1 chair per side */
+function svgSquare(num, cap, W, H) {
+  const pad=W*.19, cx=W/2, cy=H/2;
+  const tw=W-2*pad, th=H-2*pad, tx=pad, ty=pad;
+  const cw=tw*.52, ch=pad*.62;
+  const n=Math.min(+cap||4,4);
+  let chairs='';
+  // top
+  if(n>=1) chairs+=rect(cx-cw/2, ty-ch-2, cw, ch, 2);
+  // right
+  if(n>=2) chairs+=rect(tx+tw+2, cy-cw/2, ch, cw, 2);
+  // bottom
+  if(n>=3) chairs+=rect(cx-cw/2, ty+th+2, cw, ch, 2);
+  // left
+  if(n>=4) chairs+=rect(tx-ch-2, cy-cw/2, ch, cw, 2);
+  return svg(W,H,`${chairs}
+    <rect x="${f(tx)}" y="${f(ty)}" width="${f(tw)}" height="${f(th)}" rx="4" fill="${TC.frame}"/>
+    <rect x="${f(tx+2)}" y="${f(ty+2)}" width="${f(tw-4)}" height="${f(th-4)}" rx="3" fill="${TC.cloth}"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle"
+      font-size="${f(Math.min(W,H)*.13)}" font-weight="700" fill="${TC.txt}" font-family="system-ui">${num}</text>`);
+}
+
+/* Rectangle table — chairs spread across long sides */
+function svgRect(num, cap, W, H) {
+  const padX=W*.09, padY=H*.19, cx=W/2, cy=H/2;
+  const tw=W-2*padX, th=H-2*padY, tx=padX, ty=padY;
+  const n=Math.min(+cap||6,8);
+  const top=Math.ceil(n/2), bot=Math.floor(n/2);
+  const cw=(tw/Math.ceil(n/2))*.7, ch=padY*.62;
+  let chairs='';
+  for(let i=0;i<top;i++){
+    const x=tx+(tw/(top+1))*(i+1)-cw/2;
+    chairs+=rect(x, ty-ch-2, cw, ch, 2);
+  }
+  for(let i=0;i<bot;i++){
+    const x=tx+(tw/(bot+1))*(i+1)-cw/2;
+    chairs+=rect(x, ty+th+2, cw, ch, 2);
+  }
+  return svg(W,H,`${chairs}
+    <rect x="${f(tx)}" y="${f(ty)}" width="${f(tw)}" height="${f(th)}" rx="4" fill="${TC.frame}"/>
+    <rect x="${f(tx+2)}" y="${f(ty+2)}" width="${f(tw-4)}" height="${f(th-4)}" rx="3" fill="${TC.cloth}"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle"
+      font-size="${f(Math.min(W,H)*.12)}" font-weight="700" fill="${TC.txt}" font-family="system-ui">${num}</text>`);
+}
+
+/* Booth (U-shape) — thick stroked path + center table */
+function svgBooth(num, cap, W, H) {
+  const sw=W*.17;                   // bench stroke width
+  const cx=W/2;
+  const legBot=H*.88;               // bottom of legs
+  const legTop=H*.56;               // where legs end, arch begins
+  const lx=sw/2+4, rx=W-sw/2-4;
+  const archR=(rx-lx)/2;
+  const tcy=legTop-archR*.52;       // table inside the arch
+  const tr=W*.13;
+  // U-path: two legs + top arch (arc goes UP, sweep=1 = clockwise in SVG y-down)
+  const d=`M${f(lx)} ${f(legBot)} L${f(lx)} ${f(legTop)} A${f(archR)} ${f(archR)} 0 0 1 ${f(rx)} ${f(legTop)} L${f(rx)} ${f(legBot)}`;
+  return svg(W,H,`
+    <path d="${d}" stroke="${TC.chair}" stroke-width="${f(sw)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${cx}" cy="${f(tcy)}" r="${f(tr)}" fill="${TC.frame}"/>
+    <circle cx="${cx}" cy="${f(tcy)}" r="${f(tr-2)}" fill="${TC.cloth}"/>
+    <text x="${cx}" y="${f(tcy)}" text-anchor="middle" dominant-baseline="middle"
+      font-size="${f(W*.11)}" font-weight="700" fill="${TC.txt}" font-family="system-ui">${num}</text>`);
+}
+
+/* ── SVG helpers ── */
+function f(n){ return +n.toFixed(1); }
+function svg(W,H,body){ return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`; }
+function rect(x,y,w,h,r){ return `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="${r}" fill="${TC.chair}"/>`; }
+
+function makeSVG(t, W, H) {
+  switch(t.shape){
+    case 'square': return svgSquare(t.num, t.cap, W, H);
+    case 'rect':   return svgRect(t.num, t.cap, W, H);
+    case 'booth':  return svgBooth(t.num, t.cap, W, H);
+    default:       return svgRound(t.num, t.cap, W, H);
+  }
+}
+
+/* ── Canvas dimensions per shape ── */
+function dims(shape) {
+  if(shape==='rect')   return [144, 90];
+  if(shape==='booth')  return [144,112];
+  if(shape==='square') return [88,  88];
+  return [100,100]; // round
+}
+
+/* ── Create table ── */
+function createTable(){
+  const num   = document.getElementById('fNum').value.trim();
+  const cap   = parseInt(document.getElementById('fCap').value)||4;
+  const shape = document.getElementById('fShape').value;
+  const zone  = document.getElementById('fZone').value;
+  if(!num){ toast('Enter a table number.','err'); document.getElementById('fNum').focus(); return; }
+  if(tables.find(t=>t.num===num)){ toast(`Table ${num} already exists.`,'err'); return; }
+  tables.push({ id:nextId++, num, cap, shape, zone, placed:false, x:0, y:0 });
+  document.getElementById('fNum').value='';
+  document.getElementById('fCap').value='';
+  render();
+  toast(`Table ${num} created — drag to floor map.`,'ok');
+}
+
+/* ── Render sidebar ── */
+function render(){
+  const unplaced=tables.filter(t=>!t.placed);
+  document.getElementById('upTitle').textContent=`Unplaced Tables (${unplaced.length})`;
+  const list=document.getElementById('upList');
+  list.querySelectorAll('.up-item').forEach(e=>e.remove());
+  document.getElementById('emptyMsg')?.remove();
+
+  if(!unplaced.length){
+    const d=document.createElement('div');
+    d.className='empty-st'; d.id='emptyMsg';
+    d.innerHTML=tables.length?'✓ All tables placed on the map.':'No tables yet.<br>Define above →<br>then drag onto the map.';
+    list.appendChild(d);
+  } else {
+    unplaced.forEach(t=>{
+      const [W,H]=dims(t.shape);
+      const tw=Math.round(W*.5), th=Math.round(H*.5);
+      const el=document.createElement('div');
+      el.className='up-item'; el.id=`up-${t.id}`; el.draggable=true;
+      el.innerHTML=`
+        <div class="t-thumb">${makeSVG(t,tw,th)}</div>
+        <div class="t-inf">
+          <div class="t-nm">Table ${t.num}</div>
+          <div class="t-mt">${t.cap} seats · ${t.zone}</div>
+        </div>
+        <button class="btn btn-xs btn-del" onclick="delTable(${t.id},event)">✕</button>`;
+      el.addEventListener('dragstart',e=>{
+        e.dataTransfer.setData('text/plain',String(t.id));
+        e.dataTransfer.effectAllowed='move';
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend',()=>el.classList.remove('dragging'));
+      list.appendChild(el);
+    });
+  }
+  updateStats(); syncHint();
+}
+
+/* ── Delete ── */
+function delTable(id,e){ e?.stopPropagation(); tables=tables.filter(t=>t.id!==id); document.getElementById(`pt-${id}`)?.remove(); render(); }
+
+/* ── Drop zone events ── */
+dz.addEventListener('dragover',e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; dz.classList.add('dragover'); });
+dz.addEventListener('dragleave',e=>{ if(!dz.contains(e.relatedTarget)) dz.classList.remove('dragover'); });
+dz.addEventListener('drop',e=>{
+  e.preventDefault(); dz.classList.remove('dragover');
+  const id=parseInt(e.dataTransfer.getData('text/plain'));
+  const t=tables.find(t=>t.id===id); if(!t) return;
+  const dzRect=dz.getBoundingClientRect();
+  const sc=document.querySelector('.cv-scroll');
+  const [W,H]=dims(t.shape);
+  let x=e.clientX-dzRect.left+sc.scrollLeft-W/2;
+  let y=e.clientY-dzRect.top+sc.scrollTop-H/2;
+  x=Math.round(x/GRID)*GRID; y=Math.round(y/GRID)*GRID;
+  x=Math.max(0,Math.min(x,dz.offsetWidth-W));
+  y=Math.max(0,Math.min(y,dz.offsetHeight-H));
+  t.placed=true; t.x=x; t.y=y;
+  makePlaced(t); render();
+});
+
+/* ── Render placed table on canvas ── */
+function makePlaced(t){
+  const [W,H]=dims(t.shape);
+  const el=document.createElement('div');
+  el.className='pt'; el.id=`pt-${t.id}`;
+  el.style.cssText=`left:${t.x}px;top:${t.y}px;width:${W}px;height:${H}px;`;
+  el.innerHTML=`
+    <div class="pt-acts">
+      <button class="pt-act qr" onclick="openQr(${t.id})">QR</button>
+      <button class="pt-act"    onclick="unplace(${t.id})">↩ Return</button>
+      <button class="pt-act rm" onclick="delTable(${t.id})">✕</button>
+    </div>
+    ${makeSVG(t,W,H)}`;
+  dragOnCanvas(el,t);
+  dz.appendChild(el);
+}
+
+/* ── Drag to reposition on canvas ── */
+function dragOnCanvas(el,t){
+  let on=false,ox,oy,sx,sy;
+  el.addEventListener('mousedown',e=>{
+    if(drawMode) return;
+    if(e.target.closest('.pt-act')) return;
+    on=true; ox=e.clientX; oy=e.clientY; sx=t.x; sy=t.y;
+    el.style.zIndex=50;
+    el.style.filter='drop-shadow(0 8px 18px rgba(0,0,0,.38))';
+    document.body.style.cursor='grabbing'; e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!on||el.id!==`pt-${t.id}`) return;
+    const [W,H]=dims(t.shape);
+    let nx=Math.round((sx+e.clientX-ox)/GRID)*GRID;
+    let ny=Math.round((sy+e.clientY-oy)/GRID)*GRID;
+    nx=Math.max(0,Math.min(nx,dz.offsetWidth-W));
+    ny=Math.max(0,Math.min(ny,dz.offsetHeight-H));
+    t.x=nx; t.y=ny; el.style.left=nx+'px'; el.style.top=ny+'px';
+  });
+  document.addEventListener('mouseup',()=>{
+    if(!on) return; on=false;
+    el.style.zIndex=10;
+    el.style.filter='drop-shadow(0 2px 6px rgba(0,0,0,.2))';
+    document.body.style.cursor='';
+  });
+}
+
+/* ── Unplace (return to sidebar) ── */
+function unplace(id){
+  const t=tables.find(t=>t.id===id); if(!t) return;
+  t.placed=false; document.getElementById(`pt-${id}`)?.remove(); render();
+}
+
+/* ── QR modal ── */
+function openQr(id){
+  const t=tables.find(t=>t.id===id); if(!t) return;
+  activeQr=id;
+  document.getElementById('qrTtl').textContent=`Table ${t.num} — QR Code`;
+  document.getElementById('qrSub').textContent=`${t.cap} seats · ${t.zone}`;
+  const url=`https://order.duareos.com/t/${encodeURIComponent(t.num)}`;
+  document.getElementById('qrUrl').textContent=url;
+  document.getElementById('qrEl').innerHTML='';
+  (function tryRender(){
+    if(typeof QRCode!=='undefined'){
+      new QRCode(document.getElementById('qrEl'),{text:url,width:176,height:176,colorDark:'#1a1512',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+    } else { setTimeout(tryRender,100); }
+  })();
+  document.getElementById('qrOv').classList.remove('hidden');
+}
+function closeQr(){ document.getElementById('qrOv').classList.add('hidden'); activeQr=null; }
+function dlQr(){
+  const t=tables.find(t=>t.id===activeQr); if(!t) return;
+  const cv=document.querySelector('#qrEl canvas');
+  if(!cv){ toast('QR not ready.','err'); return; }
+  const a=document.createElement('a'); a.download=`table-${t.num}-qr.png`; a.href=cv.toDataURL(); a.click();
+  toast(`Table ${t.num} QR downloaded.`,'ok');
+}
+document.getElementById('qrOv').addEventListener('click',e=>{ if(e.target===e.currentTarget) closeQr(); });
+
+/* ── Helpers ── */
+function updateStats(){
+  document.getElementById('sPl').textContent=tables.filter(t=>t.placed).length;
+  document.getElementById('sTo').textContent=tables.length;
+}
+function syncHint(){
+  document.getElementById('dzHint').style.display=tables.some(t=>t.placed)?'none':'';
+}
+function clearAll(){
+  if(!tables.length && !walls.length) return;
+  if(!confirm(`Remove all ${tables.length} table(s) and ${walls.length} wall(s)?`)) return;
+  tables=[]; walls=[];
+  dz.querySelectorAll('.pt,.wall').forEach(e=>e.remove());
+  render(); updateWallCount();
+}
+function saveLayout(){
+  const p=tables.filter(t=>t.placed).length;
+  if(!p && !walls.length){ toast('Nothing placed yet.','err'); return; }
+  toast(`Layout saved — ${p} tables, ${walls.length} walls.`,'ok');
+}
+function toast(msg,type='ok'){
+  const w=document.getElementById('toasts'), d=document.createElement('div');
+  d.className=`toast ${type}`; d.textContent=msg; w.appendChild(d); setTimeout(()=>d.remove(),3200);
+}
+
+/* ── Keyboard ── */
+document.getElementById('fNum').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('fCap').focus(); });
+document.getElementById('fCap').addEventListener('keydown',e=>{ if(e.key==='Enter') createTable(); });
+
+/* ══════════════════════════════════════════
+   WALL TOOL
+══════════════════════════════════════════ */
+
+function setMode(m){
+  drawMode=(m==='wall');
+  document.getElementById('modeSelectBtn').classList.toggle('active',!drawMode);
+  document.getElementById('modeWallBtn').classList.toggle('active', drawMode);
+  dz.classList.toggle('draw-mode', drawMode);
+}
+
+/* Shared helper: canvas-relative coords accounting for scroll */
+function dzCoords(e){
+  const r=dz.getBoundingClientRect();
+  const sc=document.querySelector('.cv-scroll');
+  return { x:e.clientX-r.left+sc.scrollLeft, y:e.clientY-r.top+sc.scrollTop };
+}
+function snap(v){ return Math.round(v/GRID)*GRID; }
+
+/* Mouse events on the drop zone — wall drawing */
+dz.addEventListener('mousedown',e=>{
+  if(!drawMode) return;
+  if(e.button!==0) return;
+  if(e.target.closest('.pt-act,.wall-del,.wall')) return;
+  const {x,y}=dzCoords(e);
+  drawStart={x:snap(x), y:snap(y)};
+  drawPreview=document.createElement('div');
+  drawPreview.className='wall-preview';
+  dz.appendChild(drawPreview);
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove',e=>{
+  if(!drawMode||!drawStart||!drawPreview) return;
+  const {x,y}=dzCoords(e);
+  const ex=snap(x), ey=snap(y);
+  const dx=ex-drawStart.x, dy=ey-drawStart.y;
+  let wx,wy,ww,wh;
+  if(Math.abs(dx)>=Math.abs(dy)){
+    // horizontal wall
+    wx=Math.min(drawStart.x,ex); wy=drawStart.y-Math.round(WALL_THICK/2);
+    ww=Math.max(Math.abs(dx),WALL_MIN); wh=WALL_THICK;
+  } else {
+    // vertical wall
+    wx=drawStart.x-Math.round(WALL_THICK/2); wy=Math.min(drawStart.y,ey);
+    ww=WALL_THICK; wh=Math.max(Math.abs(dy),WALL_MIN);
+  }
+  drawPreview.style.cssText=`left:${wx}px;top:${wy}px;width:${ww}px;height:${wh}px;`;
+});
+
+document.addEventListener('mouseup',e=>{
+  if(!drawMode||!drawStart||!drawPreview) return;
+  const {left,top,width,height}=drawPreview.style;
+  const wx=parseInt(left), wy=parseInt(top), ww=parseInt(width), wh=parseInt(height);
+  drawPreview.remove(); drawPreview=null; drawStart=null;
+  if(Math.max(ww||0, wh||0)>=WALL_MIN){
+    const w={id:wallNextId++, x:wx, y:wy, w:ww, h:wh};
+    walls.push(w);
+    makeWallEl(w);
+    updateWallCount();
+  }
+});
+
+function makeWallEl(w){
+  const el=document.createElement('div');
+  el.className='wall'; el.id=`wl-${w.id}`;
+  el.style.cssText=`left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px;`;
+  el.innerHTML=`<button class="wall-del" onclick="delWall(${w.id},event)">✕</button>`;
+  dragWall(el,w);
+  dz.insertBefore(el, dz.querySelector('.pt')||null); // walls below tables
+}
+
+function dragWall(el,w){
+  let on=false,ox,oy,sx,sy;
+  el.addEventListener('mousedown',e=>{
+    if(drawMode) return;
+    if(e.target.closest('.wall-del')) return;
+    on=true; ox=e.clientX; oy=e.clientY; sx=w.x; sy=w.y;
+    el.style.zIndex=30; document.body.style.cursor='grabbing'; e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!on||el.id!==`wl-${w.id}`) return;
+    let nx=snap(sx+e.clientX-ox), ny=snap(sy+e.clientY-oy);
+    nx=Math.max(0,Math.min(nx,dz.offsetWidth-w.w));
+    ny=Math.max(0,Math.min(ny,dz.offsetHeight-w.h));
+    w.x=nx; w.y=ny; el.style.left=nx+'px'; el.style.top=ny+'px';
+  });
+  document.addEventListener('mouseup',()=>{ if(!on)return; on=false; el.style.zIndex=8; document.body.style.cursor=''; });
+}
+
+function delWall(id,e){
+  e?.stopPropagation();
+  walls=walls.filter(w=>w.id!==id);
+  document.getElementById(`wl-${id}`)?.remove();
+  updateWallCount();
+}
+
+function updateWallCount(){
+  document.getElementById('wallCount').textContent=`${walls.length} wall${walls.length!==1?'s':''}`;
+}
+
+render();
+</script>
+</body>
+</html>
