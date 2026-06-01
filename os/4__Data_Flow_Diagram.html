@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DuareOS Data Flow Diagram</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #475569;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background-color: var(--bg);
+            margin: 0;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+        .diagram-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 3rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            overflow-x: auto;
+            text-align: center;
+        }
+        .description {
+            margin-bottom: 1rem;
+            color: var(--secondary);
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DuareOS Data Flow Diagrams (DFD)</h1>
+        <p class="description">This document visualizes the core data flows within the DuareOS platform, derived from the Application Features, User Journey, and Technical Flow specifications.</p>
+
+        <h2>Level 0: Context Diagram</h2>
+        <p class="description">Shows the DuareOS system as a single process interacting with external entities (Users and Third-party APIs).</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Customer[Customer] <--> |Orders, Payments, Reviews| System(("DuareOS<br>System"))
+                    Owner[Restaurant Owner] <--> |Config, Reports, Subscriptions| System
+                    Manager[Manager] <--> |Inventory, Staff, Menu| System
+                    Waiter["Waiter/POS"] <--> |Table Orders, Bills, Returns| System
+                    Kitchen["Kitchen Staff/KDS"] <--> |Order Status, Prep Time| System
+                    Delivery[Delivery Staff] <--> |Location, Delivery Status| System
+                    System --> |Scheduled P&L, Expense, Tax Reports| Accountant[Accountant]
+                    ExtPayment["Payment Gateways<br>Stripe/bKash/PayPal/SSLCommerz"] <--> |Transactions, Webhooks| System
+                    ExtDelivery["3rd Party Delivery<br>UberEats/Foodpanda"] <--> |External Orders, Status Sync| System
+            </div>
+        </div>
+
+        <h2>Level 1: System Processes DFD</h2>
+        <p class="description">Breaks down the main system into primary operational sub-systems and data stores.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    %% External Entities
+                    Cust[Customer]
+                    Own["Owner / Manager"]
+                    Acct[Accountant]
+                    Staff["Waiter / Kitchen / Delivery"]
+                    PayGate[Payment Gateway]
+                    MapsAPI["Maps API"]
+
+                    %% Processes
+                    P1(("1.0<br>Auth &<br>Access"))
+                    P2(("2.0<br>Order<br>Management"))
+                    P3(("3.0<br>Menu &<br>Scheduling"))
+                    P3b(("3b.0<br>Ingredient<br>Inventory"))
+                    P4(("4.0<br>Billing &<br>Payments"))
+                    P5(("5.0<br>Reports &<br>Analytics"))
+
+                    %% Data Stores
+                    D1[("D1: Users & Tenants")]
+                    D2[("D2: Orders")]
+                    D3[("D3: Menu DB<br>items · schedules · toggles")]
+                    D6[("D6: Ingredient<br>Inventory DB")]
+                    D4[("D4: Ledger & Invoices")]
+
+                    %% Flows
+                    Cust -->|Credentials| P1
+                    Staff -->|Credentials| P1
+                    Own -->|Credentials| P1
+                    P1 <-->|JWT / Roles| D1
+
+                    Cust -->|Create Order| P2
+                    Staff -->|POS Updates| P2
+                    P2 <-->|Order Data| D2
+                    P2 -->|Check schedule & toggle| P3
+                    P3 <-->|Item availability| D3
+                    P2 -->|Deduct recipe ingredients| P3b
+                    P3b <-->|Ingredient quantities| D6
+
+                    Own -->|Update menu / schedules / toggles| P3
+                    P3 -->|Write| D3
+                    Own -->|Log purchase / adjust stock| P3b
+                    P3b -->|Write| D6
+
+                    Cust -->|Payment Info| P4
+                    Own -->|Subscription Payment| P4
+                    P4 <-->|Process TX| PayGate
+                    P4 -->|Tx Details| D4
+                    P2 -->|Bill Amount| P4
+                    P2 <-->|"Delivery: calc distance to branch, apply fee"| MapsAPI
+
+                    Own -->|Request Report| P5
+                    D2 -->|Sales Data| P5
+                    D4 -->|Financial Data| P5
+                    P5 -->|Dashboards / PDFs| Own
+                    P5 -->|Scheduled Email Reports| Acct
+            </div>
+        </div>
+
+        <h2>Level 2: Order Processing Sub-System</h2>
+        <p class="description">Detailed flow of an order from creation to fulfillment, including validation and external interactions.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    %% External
+                    Cust["Customer / POS"]
+                    Kit["Kitchen KDS"]
+                    Del["Delivery App"]
+
+                    %% Processes
+                    P21(("2.1<br>Validate<br>Order"))
+                    P22(("2.2<br>Process<br>Payment"))
+                    P23(("2.3<br>Kitchen<br>Routing"))
+                    P24(("2.4<br>Fulfillment"))
+
+                    %% Data Stores
+                    D2[("D2: Orders DB")]
+                    D3[("D3: Menu DB<br>schedules · toggles")]
+                    D5[("D5: Loyalty DB")]
+                    D6[("D6: Ingredient<br>Inventory DB")]
+                    MapsAPI["Maps API"]
+
+                    %% Flows
+                    Cust -->|"Cart items, promos, instructions"| P21
+                    P21 <-->|"Check item active & within schedule window"| D3
+                    P21 <-->|Validate coupon / loyalty limits| D5
+                    P21 <-->|"Delivery: geocode address, calc distance to branch, apply fee"| MapsAPI
+                    P21 -->|Validated total & items| P22
+
+                    P22 -->|Payment success| P23
+                    P22 -->|Save order CONFIRMED| D2
+                    P22 -->|"Deduct recipe ingredients per ordered item"| D6
+
+                    P23 -->|WSS Event NEW_ORDER| Kit
+                    Kit -->|Status Updates COOKING / READY| D2
+                    Kit -->|Order Ready| P24
+
+                    P24 -->|Assign Delivery / Waiter pickup| Del
+                    Del -->|Live Tracking WSS| D2
+                    Del -->|Status SERVED / DELIVERED| D2
+                    D2 -->|Push Notifications| Cust
+                    D2 -->|"rating prompt if source = app / website / QR (not POS)"| Cust
+
+                    P25(("2.5<br>Modify<br>Order"))
+                    P26(("2.6<br>Cancel<br>Order"))
+
+                    WtrMod["Waiter / POS"] -->|"modify items while PENDING"| P25
+                    Cust -->|"modify (dine-in / QR only, while PENDING)"| P25
+                    P25 <-->|"update items, recalculate total"| D2
+                    P25 -->|"WSS: updated order to KDS"| Kit
+
+                    WtrMod -->|"cancel any order type before COOKING"| P26
+                    Cust -->|"cancel before COOKING (all order types)"| P26
+                    P26 -->|"status CANCELLED, reason logged"| D2
+                    P26 -->|WSS: remove from KDS| Kit
+                    P26 -->|refund if pre-paid| P22
+            </div>
+        </div>
+
+        <h2>Level 2: Tenant & Menu Management</h2>
+        <p class="description">Menu item availability is controlled by schedule windows and enable/disable toggles — not stock counts. Ingredient inventory is tracked separately.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Owner["Owner / Manager"]
+
+                    P31(("3.1<br>Manage<br>Menu Items"))
+                    P32(("3.2<br>Configure<br>Schedules"))
+                    P33(("3.3<br>Configure<br>Loyalty &amp; Promos"))
+                    P34(("3.4<br>Manage Ingredient<br>Inventory"))
+
+                    D3[("D3: Menu DB<br>items · modifiers · upsells")]
+                    D3s[("D3s: Schedule DB<br>time windows · day rules")]
+                    D5[("D5: Config DB<br>loyalty · coupons")]
+                    D6[("D6: Ingredient<br>Inventory DB")]
+
+                    Owner -->|"Add / edit items, modifiers, upsells"| P31
+                    Owner -->|Enable / disable item toggle| P31
+                    P31 -->|Write item + active flag| D3
+
+                    Owner -->|"Set time windows, day rules, date ranges"| P32
+                    P32 -->|Write schedule constraints| D3s
+                    D3s -.->|"applied at query time — not a stock field"| D3
+
+                    Owner -->|Set reward rules / coupon codes| P33
+                    P33 -->|Write rules| D5
+
+                    Owner -->|"Log purchase, receive delivery, log waste"| P34
+                    P34 -->|Update ingredient quantities| D6
+                    Owner -->|"Link recipe (ingredients + quantities) to menu item"| P31
+                    P31 -->|Write recipe mapping| D6
+
+                    P35(("3.5<br>Delivery Fee<br>Config"))
+                    D9[("Tenant Settings<br>baseFee · perKmRate · maxKm")]
+                    Owner -->|"set base fee, per-km rate, max delivery distance"| P35
+                    P35 -->|write delivery fee settings| D9
+
+                    P36(("3.6<br>Cost of Production<br>Calc"))
+                    D6 -->|"ingredient unit costs + recipe quantities"| P36
+                    P36 -->|"Σ(qty × unitCost) → margin % per item"| D3
+
+                    P37(("3.7<br>Currency<br>Config"))
+                    D8[("Currency Settings<br>baseCurrency · displayCurrencies<br>Exchange Rate Cache Redis")]
+                    Owner -->|"set base currency + display currencies"| P37
+                    P37 -->|store config| D8
+                    D8 -.->|"rates refreshed hourly from external API"| D8
+                    D8 -.->|"prices converted client-side at display time"| D3
+
+                    P38a(("3.8a<br>Define Table<br>Inventory"))
+                    P38b(("3.8b<br>Floor Map<br>2D Builder"))
+                    D10[("Floor Plan DB<br>Tables & Canvas JSON")]
+                    
+                    Owner -->|"1. create table records (capacity/name)"| P38a
+                    P38a -->|write unplaced tables| D10
+                    Owner -->|"2. drag unplaced tables & adjust layout"| P38b
+                    P38b -->|export scene JSON| D10
+            </div>
+        </div>
+
+        <h2>Level 2: Authentication &amp; Session Flow</h2>
+        <p class="description">Login, JWT lifecycle, token refresh (Owner only), OTP password reset, and staff deactivation via Redis blacklist.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    User["All Roles"]
+                    EmailSvc["Email Service"]
+
+                    PA1(("A.1<br>Validate<br>Credentials"))
+                    PA2(("A.2<br>Issue JWT<br>by Role"))
+                    PA3(("A.3<br>Refresh<br>Token"))
+                    PA4(("A.4<br>OTP<br>Reset Flow"))
+                    PA5(("A.5<br>Blacklist<br>Token"))
+
+                    DA1[("Users DB<br>PostgreSQL")]
+                    DA2[("Token Blacklist<br>Redis")]
+
+                    User -->|"email + password"| PA1
+                    PA1 <-->|bcrypt compare| DA1
+                    PA1 -->|valid| PA2
+                    PA2 -->|"Owner: 15m access + 7d refresh<br>Staff: 30d long-lived"| User
+
+                    User -->|"expired token + refresh cookie"| PA3
+                    PA3 <-->|verify refresh| DA1
+                    PA3 -->|new access token| User
+
+                    User -->|forgot password| PA4
+                    PA4 -->|OTP email 5m TTL| EmailSvc
+                    User -->|"OTP + new password"| PA4
+                    PA4 -->|update password hash| DA1
+
+                    MgrDeact["Manager"] -->|"deactivate staff account (PATCH /api/staff/:id/deactivate)"| PA5
+                    User -->|self logout| PA5
+                    PA5 -->|"blacklist JWT, TTL = remaining lifetime"| DA2
+                    DA2 -.->|checked by middleware on every request| PA1
+            </div>
+        </div>
+
+        <h2>Level 2: Subscription &amp; Billing Flow</h2>
+        <p class="description">Owner selects a plan, payment is processed via gateway, IPN webhook syncs status, and the tenant account activates.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Owner["Restaurant Owner"]
+                    Gateway["Payment Gateway<br>Stripe / bKash / PayPal / SSLCommerz"]
+
+                    PB1(("B.1<br>Select Plan<br>&amp; Checkout"))
+                    PB2(("B.2<br>Verify Payment<br>Session"))
+                    PB3(("B.3<br>Handle IPN<br>Webhook"))
+                    PB4(("B.4<br>Activate<br>Tenant"))
+
+                    DB1[("Subscription<br>Records")]
+                    DB2[("Invoice<br>History")]
+
+                    NewTenant["New Tenant\nRegistration"]
+                    CronTrial["Cron Job\nTrial Check"]
+                    PTrial(("B.0<br>Trial Period<br>Activation"))
+
+                    NewTenant -->|registration complete| PTrial
+                    PTrial -->|"status: TRIAL, trialEndsAt set"| DB1
+                    CronTrial -->|daily: check expiring trials| PTrial
+                    PTrial -->|"expiry warning email (3d + 1d before)"| Owner
+                    PTrial -->|"on expiry: restrict access"| PB1
+
+                    Owner -->|plan selection| PB1
+                    PB1 -->|create payment session| Gateway
+                    Gateway -->|redirect to checkout| Owner
+                    Owner -->|completes payment| Gateway
+
+                    Gateway -->|"redirect /payment/success?session_id"| PB2
+                    PB2 <-->|verify session| Gateway
+                    PB2 -->|update subscription status + expiry| DB1
+                    DB1 -->|activation confirmed| PB4
+                    PB4 -->|tenant account active| Owner
+
+                    Gateway -->|"POST /api/webhooks/payment-ipn"| PB3
+                    PB3 -->|verify signature| PB3
+                    PB3 -->|sync payment status| DB1
+                    PB3 -->|log invoice| DB2
+
+                    Gateway -->|"redirect /payment/failure"| Owner
+            </div>
+        </div>
+
+        <h2>Level 2: Loyalty &amp; Rewards Flow</h2>
+        <p class="description">Points accrual on SERVED or DELIVERED (QR / app / web orders only), redemption at checkout, coupon lifecycle, referral rewards, and nightly expiry cron.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Customer["Customer"]
+                    Cron["Cron Job<br>Nightly"]
+                    Admin["Owner / Manager"]
+
+                    PL1(("L.1<br>Accrue Points<br>on SERVED / DELIVERED"))
+                    PL2(("L.2<br>Redeem Points<br>at Checkout"))
+                    PL3(("L.3<br>Validate<br>Coupon"))
+                    PL4(("L.4<br>Referral<br>Reward"))
+                    PL5(("L.5<br>Expire Inactive<br>Points"))
+
+                    DL1[("Customer<br>Loyalty Balance")]
+                    DL2[("Loyalty<br>Ledger")]
+                    DL3[("Coupon<br>Rules")]
+                    DL4[("Loyalty<br>Config")]
+
+                    Admin -->|"configure earning rules, tiers, expiry"| DL4
+                    Admin -->|create coupon codes| DL3
+
+                    OrderComp["Order Completed<br>(SERVED or DELIVERED)"]
+                    DL4 -->|earningRules + tier multiplier| PL1
+                    OrderComp -->|"source = QR / app / web &amp; customer logged in"| PL1
+                    PL1 -->|floor earnedPoints| DL1
+                    PL1 -->|log EARN| DL2
+                    DL1 -->|push: earned X pts| Customer
+
+                    POS["Waiter / POS"] -->|"redeem points on behalf of customer (in-store)"| PL2
+                    Customer -->|loyaltyPoints at checkout| PL2
+                    PL2 <-->|validate balance + min/max rules| DL1
+                    PL2 <-->|fetch pointValue from config| DL4
+                    PL2 -->|apply discount to order total| Customer
+                    PL2 -->|deduct + log REDEEM| DL1
+                    PL2 -->|log REDEEM| DL2
+
+                    Customer -->|couponCode at checkout| PL3
+                    PL3 <-->|"check status, expiry, usageCount"| DL3
+                    PL3 -->|apply discount| Customer
+                    PL3 -->|increment usageCount; INACTIVE if maxUses hit| DL3
+
+                    Customer -->|"first order DELIVERED after referral signup"| PL4
+                    PL4 -->|award referrer + referee points| DL1
+                    PL4 -->|log REFERRAL| DL2
+
+                    Cron -->|nightly run| PL5
+                    PL5 <-->|find inactive customers past inactivityDays| DL1
+                    PL5 -->|reset balance + log EXPIRE| DL2
+            </div>
+        </div>
+
+        <h2>Level 2: Real-Time WebSocket Flow</h2>
+        <p class="description">WebSocket event chain from order creation through kitchen processing to customer notification.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph LR
+                    Customer["Customer App"]
+                    Waiter["Waiter Dashboard"]
+                    KDS["Kitchen KDS"]
+                    DeliveryApp["Delivery App"]
+
+                    PW1(("W.1<br>WS Auth<br>&amp; Room Join"))
+                    PW2(("W.2<br>Broadcast<br>NEW_ORDER"))
+                    PW3(("W.3<br>Broadcast<br>STATUS UPDATE"))
+                    PW4(("W.4<br>Broadcast<br>READY / DONE"))
+
+                    DW1[("Orders DB")]
+                    DW2[("Redis<br>Pub-Sub")]
+
+                    Customer -->|"WSS + JWT"| PW1
+                    Waiter -->|"WSS + JWT"| PW1
+                    KDS -->|"WSS + JWT read-only"| PW1
+                    DeliveryApp -->|"WSS + JWT"| PW1
+                    PW1 -->|assign to tenant room| DW2
+
+                    Customer -->|"POST /api/orders/create"| PW2
+                    PW2 -->|save order CONFIRMED| DW1
+                    PW2 -->|emit NEW_ORDER to room| DW2
+                    DW2 -->|NEW_ORDER| KDS
+                    DW2 -->|NEW_ORDER| Waiter
+
+                    KDS -->|PATCH status COOKING| PW3
+                    PW3 -->|update DB| DW1
+                    PW3 -->|emit ORDER_STATUS| DW2
+                    DW2 -->|live status update| Customer
+                    DW2 -->|status update| Waiter
+
+                    KDS -->|PATCH status READY| PW4
+                    PW4 -->|emit ORDER_READY| DW2
+                    DW2 -->|notify: pick up| Waiter
+                    DW2 -->|push notification| Customer
+                    Waiter -->|mark SERVED| PW4
+                    DeliveryApp -->|mark DELIVERED| PW4
+                    PW4 -->|close order in DB| DW1
+            </div>
+        </div>
+
+        <h2>Level 2: Kitchen Display System (KDS) Flow</h2>
+        <p class="description">Incoming orders routed to kitchen stations by tag, rendered with cuisine-specific color coding, prep-time urgency indicators, and status updates propagated back to waiter and customer.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    WSS["WebSocket Server<br>(NEW_ORDER event)"]
+                    KitchStaff["Kitchen Staff"]
+                    Waiter["Waiter Dashboard"]
+                    Customer["Customer App"]
+
+                    PK1(("K.1<br>Route to<br>Station"))
+                    PK2(("K.2<br>Render Order<br>Card"))
+                    PK3(("K.3<br>Prep Time<br>Tracker"))
+                    PK4(("K.4<br>Mark<br>COOKING"))
+                    PK5(("K.5<br>Mark<br>READY"))
+
+                    DK1[("Orders DB")]
+                    DK2[("Tenant Settings<br>cuisineTag → color map")]
+
+                    WSS -->|"NEW_ORDER: items, table, customizations"| PK1
+                    PK1 -->|"split items by stationTag (grill · fryer · cold-prep)"| PK2
+                    DK2 -->|"fetch cuisineTag color mapping"| PK2
+                    PK2 -->|"order card with cuisine color + sound alert"| KitchStaff
+                    PK2 -->|start countdown| PK3
+                    PK3 -->|"green → yellow → red urgency"| KitchStaff
+
+                    KitchStaff -->|tap COOKING| PK4
+                    PK4 -->|"PATCH /api/orders/:id/status"| DK1
+                    PK4 -->|"WSS: ORDER_STATUS COOKING"| Waiter
+                    PK4 -->|"WSS: live status update"| Customer
+
+                    KitchStaff -->|tap READY| PK5
+                    PK5 -->|"PATCH /api/orders/:id/status"| DK1
+                    PK5 -->|"WSS: ORDER_READY → notify pick up"| Waiter
+                    PK5 -->|"push notification: order ready"| Customer
+            </div>
+        </div>
+
+        <h2>Level 2: Delivery Flow</h2>
+        <p class="description">Order assignment, route optimization, live GPS tracking in Redis, age verification at door, and completion.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Manager["Manager"]
+                    DeliveryStaff["Delivery Staff App"]
+                    Customer["Customer"]
+                    MapsAPI["Google Maps /<br>OpenRouteService"]
+
+                    PD1(("D.1<br>Assign<br>Delivery"))
+                    PD2(("D.2<br>Route<br>Optimization"))
+                    PD3(("D.3<br>Live GPS<br>Tracking"))
+                    PD4(("D.4<br>Age Check<br>&amp; Handover"))
+                    PD5(("D.5<br>Mark<br>Delivered"))
+
+                    DD1[("Orders DB")]
+                    DD2[("Location Cache<br>Redis")]
+                    DD3[("Delivery<br>Metrics DB")]
+
+                    Manager -->|"POST /api/delivery/assign"| PD1
+                    PD1 -->|update order| DD1
+                    PD1 -->|WS event to staff| DeliveryStaff
+
+                    DeliveryStaff -->|"GET /api/delivery/route"| PD2
+                    PD2 <-->|call Maps API| MapsAPI
+                    PD2 -->|optimized route| DeliveryStaff
+
+                    DeliveryStaff -->|POST location every 10s| PD3
+                    PD3 -->|store lat+lng fast TTL| DD2
+                    DD2 -->|"GET /api/delivery/track or WS push"| Customer
+
+                    DeliveryStaff -->|arrives at door| PD4
+                    PD4 -->|if age-restricted: show ID check alert| DeliveryStaff
+                    DeliveryStaff -->|Confirm Age OR log refusal| PD4
+                    PD4 -->|ageVerifiedAtDoor logged on order| DD1
+
+                    DeliveryStaff -->|PATCH status DELIVERED| PD5
+                    PD5 -->|update order| DD1
+                    PD5 -->|update delivery metrics| DD3
+                    PD5 -->|prompt rating| Customer
+            </div>
+        </div>
+
+        <h2>Level 2: Reservation System Flow</h2>
+        <p class="description">Online reservation, walk-in entry, automated reminders, and status lifecycle on the floor map.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Customer["Customer<br>App / Website"]
+                    Waiter["Waiter / Manager"]
+                    Cron["Cron Job<br>Reminder"]
+                    NotifSvc["Email +<br>Push Notify"]
+
+                    PR1(("R.1<br>Check Table<br>Availability"))
+                    PR2(("R.2<br>Create Online<br>Reservation"))
+                    PR3(("R.3<br>Walk-in<br>Entry"))
+                    PR4(("R.4<br>Send<br>Reminder"))
+                    PR5(("R.5<br>Update<br>Status"))
+
+                    DR1[("Tables DB")]
+                    DR2[("Reservations DB")]
+
+                    Customer -->|"date, time, partySize"| PR1
+                    PR1 <-->|"SELECT tables WHERE capacity >= partySize AND no overlap"| DR1
+                    PR1 -->|available| PR2
+                    PR2 -->|create reservation PENDING| DR2
+                    PR2 -->|confirmation: push + email| NotifSvc
+                    NotifSvc -->|sent to customer| Customer
+
+                    Waiter -->|"walk-in: name, phone, partySize"| PR3
+                    PR3 -->|create reservation CONFIRMED immediately| DR2
+
+                    Cron -->|X hours before reservation| PR4
+                    PR4 <-->|fetch upcoming reservations| DR2
+                    PR4 -->|reminder: push + email| NotifSvc
+                    NotifSvc -->|reminder sent| Customer
+
+                    Waiter -->|"PENDING → CONFIRMED"| PR5
+                    Waiter -->|"CONFIRMED → ARRIVED"| PR5
+                    Customer -->|"cancel own reservation (PENDING / CONFIRMED → CANCELLED)"| PR5
+                    PR5 -->|ARRIVED: mark table occupied on floor map| DR1
+                    PR5 -->|"ARRIVED → COMPLETED: free table"| DR1
+                    PR5 -->|CANCELLED: notify customer| NotifSvc
+                    PR5 -->|update reservation record| DR2
+            </div>
+        </div>
+
+        <h2>Level 2: Notification Flow</h2>
+        <p class="description">All notification channels — FCM push, Web Push, email (SendGrid), in-app WebSocket, and scheduled cron batches.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    OrderEv["Order Status Event"]
+                    InventEv["Inventory Deduction Event"]
+                    BillingEv["Billing / Subscription Event"]
+                    CronJob["Cron Jobs<br>Scheduled"]
+
+                    PN1(("N.1<br>Push<br>Notification"))
+                    PN2(("N.2<br>Email<br>Notification"))
+                    PN3(("N.3<br>In-App<br>WebSocket"))
+                    PN4(("N.4<br>Scheduled<br>Batch"))
+
+                    FCM["FCM<br>Mobile Push"]
+                    WebPush["Web Push API<br>Browser"]
+                    EmailSvc["SendGrid /<br>Nodemailer"]
+                    DB_Notif[("Notification<br>Store DB")]
+
+                    OrderEv -->|status change| PN1
+                    OrderEv -->|status change| PN3
+                    InventEv -->|low stock threshold crossed| PN1
+                    InventEv -->|low stock alert| PN3
+                    BillingEv -->|"payment success/fail"| PN2
+
+                    PN1 -->|mobile| FCM
+                    PN1 -->|browser| WebPush
+
+                    DashClient["Dashboard<br>(Waiter / Manager / Owner)"]
+                    PN3 -->|store notification| DB_Notif
+                    PN3 -->|real-time WS push| DashClient
+
+                    PN2 -->|send via| EmailSvc
+
+                    CronJob -->|midnight: daily/weekly/monthly report| PN4
+                    CronJob -->|"9am: vendor payment reminders"| PN4
+                    CronJob -->|configured dates: tax + salary| PN4
+                    CronJob -->|"X hours before reservation (configurable per tenant)"| PN4
+                    CronJob -->|"3d + 1d before trialEndsAt: trial expiry warning"| PN4
+                    PN4 -->|email to Owner / Accountant / Customer| EmailSvc
+            </div>
+        </div>
+
+        <h2>Level 2: Financial Management Flow</h2>
+        <p class="description">P&amp;L report generation, expense logging, salary payouts, vendor payment tracking, and financial calendar reminders.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    Owner["Owner"]
+                    Manager["Manager"]
+                    Acct["Accountant"]
+                    CronF["Cron Jobs"]
+                    EmailF["Email Service"]
+
+                    PF1(("F.1<br>P&amp;L Report<br>Generation"))
+                    PF2(("F.2<br>Expense<br>Logging"))
+                    PF3(("F.3<br>Salary<br>Payout"))
+                    PF4(("F.4<br>Vendor Payment<br>Tracking"))
+                    PF5(("F.5<br>Financial Calendar<br>&amp; Reminders"))
+
+                    DF1[("Orders DB<br>revenue · refunds")]
+                    DF2[("Expense Logs DB<br>categorized spending")]
+                    DF3[("Staff &amp; Salary DB<br>hours · rates · payouts")]
+                    DF4[("Vendor Payments DB<br>dues · history")]
+                    DF5[("Ingredient DB<br>COGS · food cost %")]
+
+                    Owner -->|request P&amp;L report| PF1
+                    DF1 -->|sales + refunds data| PF1
+                    DF2 -->|operating expenses| PF1
+                    DF5 -->|food cost / COGS| PF1
+                    PF1 -->|"gross profit, net profit, margin, COGS"| Owner
+                    PF1 -->|scheduled report PDF / Excel| Acct
+
+                    Manager -->|log daily / weekly expense| PF2
+                    PF2 -->|categorized entry| DF2
+                    DF2 -->|expense summary| Owner
+
+                    Manager -->|process salary payout| PF3
+                    PF3 <-->|staff hours + rates| DF3
+                    PF3 -->|salary record + payment log| DF3
+                    Owner -->|final oversight| PF3
+
+                    Manager -->|log vendor payment| PF4
+                    PF4 -->|update payment status + due date| DF4
+                    DF4 -->|overdue payments flagged| PF5
+
+                    CronF -->|daily vendor due check| PF5
+                    CronF -->|"tax / salary reminder dates"| PF5
+                    PF5 -->|due reminders + alerts| EmailF
+                    PF5 -->|dashboard alerts| Owner
+                    PF5 -->|dashboard alerts| Manager
+            </div>
+        </div>
+
+        <h2>Level 2: Ingredient Inventory Flow</h2>
+        <p class="description">Tracks raw ingredient quantities (e.g., chicken, flour, oil) by unit/weight. Menu items have no stock counter — ingredient deduction happens via recipe lookup after order confirmation.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph TD
+                    OrderSys["Order System<br>(on CONFIRMED)"]
+                    Manager["Manager"]
+                    Supplier["Supplier"]
+
+                    PI1(("I.1<br>Deduct Ingredients<br>via Recipe"))
+                    PI2(("I.2<br>Low-Stock<br>Check"))
+                    PI3(("I.3<br>Create Purchase<br>Order"))
+                    PI4(("I.4<br>Receive Delivery<br>&amp; Log Payment"))
+                    PI5(("I.5<br>Restocking<br>Suggestions"))
+
+                    DI1[("Ingredient DB<br>ingredientId · quantity · unit · threshold")]
+                    DI0[("Recipe DB<br>menuItemId → ingredientId · qty")]
+                    DI2[("Purchase<br>Orders DB")]
+                    DI3[("Vendor<br>Payments DB")]
+
+                    OrderSys -->|"order confirmed: look up recipe per ordered item"| DI0
+                    DI0 -->|ingredient list + quantities to deduct| PI1
+                    PI1 -->|"UPDATE ingredient SET qty = qty - used"| DI1
+                    DI1 -->|after every deduction| PI2
+                    PI2 -->|"if qty < lowStockThreshold → push + dashboard alert"| Manager
+
+                    DI1 -->|avg daily usage x supplier lead time| PI5
+                    PI5 -->|actionable restock suggestions on dashboard| Manager
+
+                    Manager -->|"POST /api/purchases"| PI3
+                    PI3 -->|create purchase order| DI2
+                    PI3 -->|PO sent to| Supplier
+
+                    Supplier -->|delivers ingredients| PI4
+                    Manager -->|log delivery received| PI4
+                    PI4 -->|"UPDATE ingredient qty"| DI1
+                    PI4 -->|log vendor payment + due date| DI3
+            </div>
+        </div>
+
+        <h2>Level 2: Third-Party Delivery Integration</h2>
+        <p class="description">External platform orders ingested via webhook, mapped to internal schema, enter the same order pipeline, and status synced back.</p>
+        <div class="diagram-container">
+            <div class="mermaid">
+                graph LR
+                    ExtPlatform["UberEats / Foodpanda<br>/ DoorDash"]
+                    KDS["Kitchen KDS"]
+                    Analytics["Analytics Dashboard"]
+
+                    PT1(("T.1<br>Receive<br>Webhook"))
+                    PT2(("T.2<br>Map to<br>Internal Schema"))
+                    PT3(("T.3<br>Standard Order<br>Pipeline"))
+                    PT4(("T.4<br>Sync Status<br>Back"))
+
+                    DT1[("Orders DB<br>source tag")]
+
+                    ExtPlatform -->|"POST /api/integrations/webhook/:platform"| PT1
+                    PT1 -->|map platform format| PT2
+                    PT2 -->|"create order with source: UBEREATS etc"| DT1
+                    DT1 -->|enters standard pipeline| PT3
+                    PT3 -->|"WS event: NEW_ORDER"| KDS
+
+                    PT3 -->|internal status change| PT4
+                    PT4 -->|POST to platform status webhook| ExtPlatform
+
+                    DT1 -->|"GET /api/orders?source=all"| Analytics
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "primary": [
+    {
+      "name": "DuareOne",
+      "weights": ["Light", "Regular", "Medium", "Bold"],
+      "usage": "Headlines, body text, UI labels, product branding"
+    }
+  ],
+  "secondary": [
+    {
+      "name": "Arial",
+      "usage": "Fallback system font for digital/web environments"
+    },
+    {
+      "name": "Helvetica",
+      "usage": "Fallback system font for digital/web environments"
+    }
+  ],
+  "guidelines": {
+    "headlines": {
+      "font": "DuareOne Bold",
+      "size": "32px-48px",
+      "tracking": "-1%"
+    },
+    "subheadings": {
+      "font": "DuareOne Medium",
+      "size": "24px-32px"
+    },
+    "body": {
+      "font": "DuareOne Regular",
+      "size": "16px-18px",
+      "lineHeight": "1.5"
+    },
+    "captions": {
+      "font": "DuareOne Light",
+      "size": "12px-14px"
+    }
+  }
+}

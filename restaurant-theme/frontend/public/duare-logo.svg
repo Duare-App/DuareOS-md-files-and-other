@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 48" fill="none">
+  <!-- "duare" wordmark -->
+  <text
+    x="0" y="36"
+    font-family="'Inter', 'Segoe UI', Arial, sans-serif"
+    font-size="34"
+    font-weight="700"
+    fill="#1a1a2e"
+    letter-spacing="-1"
+  >duare</text>
+
+  <!-- Blue 3D cube icon (right side) -->
+  <!-- Top face -->
+  <polygon points="134,8 150,14 138,20 122,14" fill="#3B82F6"/>
+  <!-- Left face -->
+  <polygon points="122,14 138,20 138,36 122,30" fill="#1D4ED8"/>
+  <!-- Right face -->
+  <polygon points="138,20 150,14 150,30 138,36" fill="#60A5FA"/>
+</svg>

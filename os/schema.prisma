@@ -1,0 +1,663 @@
+// DuareOS — MVP Prisma Schema
+// Stack: PostgreSQL · Prisma ORM · Node.js · Next.js
+// Redis handles: JWT blacklist, OTP TTL, menu cache, exchange rates (TTL 1h)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum Role {
+  OWNER     // cross-branch; access token 15min + refresh 7d
+  MANAGER   // branch-scoped; long-lived token 30d
+  WAITER    // branch-scoped; long-lived token 30d
+  KITCHEN   // branch-scoped; long-lived token 30d
+  DELIVERY  // branch-scoped; long-lived token 30d
+  CUSTOMER  // registered via Customer App; long-lived token 30d
+}
+
+enum OrderStatus {
+  PENDING    // just created; customer/waiter can still modify or cancel
+  CONFIRMED  // payment taken (online) or accepted (POS); customer can still cancel
+  COOKING    // kitchen marked COOKING; no more cancellations
+  READY      // kitchen done; waiter to pick up
+  SERVED     // waiter marked served (dine-in)
+  DELIVERED  // delivery staff marked delivered
+  CANCELLED
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum OrderSource {
+  APP
+  WEBSITE
+  QR_SCAN
+  POS // used in later sections; defined here to keep enum stable
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  MOBILE_WALLET
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  VOIDED
+}
+
+enum TableShape {
+  RECT
+  CIRCLE
+  SQUARE
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  ARRIVED
+  COMPLETED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+enum ExpenseCategory {
+  STAFF
+  RENT
+  UTILITIES
+  SUPPLIES
+  OTHER
+}
+
+enum MenuScheduleTarget {
+  CATEGORY
+  ITEM
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED  // active order on this table
+  RESERVED  // upcoming reservation assigned
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — AUTHENTICATION & ACCOUNT ACCESS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Tenant ───────────────────────────────────────────────────────────────────
+// Created on Owner registration. Each Tenant = isolated restaurant business.
+// tenantId injected into every Prisma query via middleware — no cross-tenant leakage.
+
+model Tenant {
+  id               String   @id @default(cuid())
+  name             String
+  email            String   @unique // Owner's business email
+  accountantEmail  String?           // receives daily/weekly/monthly email summaries
+  baseCurrency     String   @default("USD")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  branches Branch[]
+  users    User[]
+}
+
+// ─── Branch ───────────────────────────────────────────────────────────────────
+// Owner creates at least one Branch on onboarding.
+// Manager/Waiter/Kitchen/Delivery are scoped to one Branch.
+
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  baseCurrency   String         @default("USD")
+  printerConfig    Json?  // { receiptPrinter, kitchenPrinter, cashDrawer }
+  floorPlanJson    Json?  // 2D canvas scene export (react-konva / fabric.js)
+  cuisineColorMap  Json?  // { "Grill": "#FF5733", "Asian": "#33FF57" } — KDS card colors
+  users          User[]
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  tables         Table[]
+  orders         Order[]
+  reservations   Reservation[]
+  ingredients    Ingredient[]
+  purchaseOrders PurchaseOrder[]
+  expenses       Expense[]
+  payrolls       Payroll[]
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+// All roles in one table. Role field drives access control at API layer.
+//
+// branchId rules:
+//   OWNER    → null (sees all branches under tenantId)
+//   MANAGER  → required
+//   WAITER   → required
+//   KITCHEN  → required
+//   DELIVERY → required
+//   CUSTOMER → null (not branch-specific)
+//
+// Token strategy:
+//   OWNER  → access token 15min (memory) + refresh 7d (httpOnly cookie)
+//   Others → long-lived 30d; no refresh cycle
+//   Blacklist → Redis; populated on logout or isActive=false
+//
+// Creation rules (enforced server-side):
+//   OWNER    → self-registers via /api/auth/register
+//   MANAGER  → created by OWNER only
+//   WAITER / KITCHEN / DELIVERY → created by OWNER or MANAGER
+
+model User {
+  id                String   @id @default(cuid())
+  tenantId          String
+  branchId          String?
+  name              String
+  email             String
+  password          String   // bcrypt hash
+  role              Role
+  isActive          Boolean  @default(true) // false → login blocked + JWT blacklisted in Redis
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  otpTokens    OtpToken[]
+  orders       Order[]    @relation("CustomerOrders")
+  staffOrders  Order[]    @relation("StaffOrders")
+  reservations Reservation[]
+  payrolls     Payroll[]
+
+  @@unique([tenantId, email])
+}
+
+// ─── OtpToken ─────────────────────────────────────────────────────────────────
+// Forgot password:
+//   POST /api/auth/forgot-password → OTP generated → emailed → stored here
+//   POST /api/auth/verify-otp      → checks otp + expiresAt + used=false → used=true
+//   POST /api/auth/reset-password  → updates User.password
+//
+// Alternative: Redis with 5min TTL auto-expiry. Use one, not both.
+
+model OtpToken {
+  id        String   @id @default(cuid())
+  userId    String
+  otp       String   // 6-digit; store hashed
+  expiresAt DateTime // now() + 5min
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — CUSTOMER APP & WEBSITE (MVP items only)
+// Future Plan items skipped: loyalty, push promos, ratings, offer badges, upsells
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── MenuCategory ─────────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  branchId  String
+  name      String   // e.g. "Burgers", "Drinks", "Sides"
+  imageUrl  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  branch Branch     @relation(fields: [branchId], references: [id])
+  items  MenuItem[]
+}
+
+// ─── MenuItem ─────────────────────────────────────────────────────────────────
+// Availability = isActive toggle OR schedule window (schedule added in Restaurant Mgmt section).
+// No quantity/stock field — ingredient deduction happens via Recipe (Inventory section).
+
+model MenuItem {
+  id              String   @id @default(cuid())
+  tenantId        String
+  branchId        String
+  categoryId      String
+  name            String
+  description     String?
+  imageUrl        String[]
+  basePrice            Float
+  taxRate              Float   @default(0)
+  estimatedPrepMinutes Int?    // KDS urgency threshold: green < X, yellow < 2X, red >= 2X
+  isActive             Boolean @default(true)
+  isAgeRestricted Boolean  @default(false)
+  stationTag      String?  // KDS routing: "grill" | "cold-prep" | "fryer"
+  cuisineTag      String?  // KDS card color key; mapping stored in TenantSettings
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branch         Branch                 @relation(fields: [branchId], references: [id])
+  category       MenuCategory           @relation(fields: [categoryId], references: [id])
+  modifierGroups MenuItemModifierGroup[]
+  orderItems     OrderItem[]
+  recipes        Recipe[]
+}
+
+// ─── ModifierGroup ────────────────────────────────────────────────────────────
+// e.g. "Add-ons" (optional, max 3), "Spice Level" (required, pick 1)
+
+model ModifierGroup {
+  id         String   @id @default(cuid())
+  branchId   String
+  name       String
+  minSelect  Int      @default(0)  // 0 = optional
+  maxSelect  Int      @default(1)
+  isRequired Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  options   ModifierOption[]
+  menuItems MenuItemModifierGroup[]
+}
+
+// ─── ModifierOption ───────────────────────────────────────────────────────────
+
+model ModifierOption {
+  id              String  @id @default(cuid())
+  modifierGroupId String
+  name            String  // e.g. "Extra Cheese", "No Onions"
+  priceAdjustment Float   @default(0)
+  isDefault       Boolean @default(false)
+
+  group              ModifierGroup       @relation(fields: [modifierGroupId], references: [id])
+  orderItemModifiers OrderItemModifier[]
+}
+
+// ─── MenuItemModifierGroup (junction) ────────────────────────────────────────
+
+model MenuItemModifierGroup {
+  menuItemId      String
+  modifierGroupId String
+
+  menuItem      MenuItem      @relation(fields: [menuItemId], references: [id])
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+
+  @@id([menuItemId, modifierGroupId])
+}
+// ─── Table ────────────────────────────────────────────────────────────────────
+// Tables created in "Add Tables" modal first, then placed on 2D canvas.
+// isPlaced = false → still in Unplaced sidebar.
+
+model Table {
+  id        String     @id @default(cuid())
+  tenantId  String
+  branchId  String
+  name      String     // "T1", "VIP-3"
+  shape     TableShape
+  capacity  Int
+  isPlaced  Boolean     @default(false)
+  status    TableStatus @default(AVAILABLE)
+  createdAt DateTime   @default(now())
+
+  code         String     @unique // unique scan token embedded in QR URL
+  qrImageUrl   String?
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  reservations Reservation[]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — POINT OF SALE (POS)
+// No new tables — POS reuses Order, Payment, User, MenuItem, MenuCategory.
+// Future Plan items skipped: split billing, tip logging, auto gratuity, age verification prompt
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Order ────────────────────────────────────────────────────────────────────
+// Covers all order types and sources.
+//
+// Modification rules (enforced at API layer):
+//   Customer can modify → DINE_IN / QR_SCAN only, while status = PENDING
+//   Staff can modify    → any type, while status = PENDING
+//   No modifications    → once status = COOKING
+//
+// Cancellation rules:
+//   Customer or staff → any order type, while status = PENDING or CONFIRMED
+//   Ingredient quantities NOT restored on cancel (treated as wastage)
+//
+// POS-specific:
+//   isHeld = true → order parked; retrieved later when customer is ready
+//   isReturn = true + returnedFromOrderId → return order; financial reverse only,
+//     ingredients NOT restored (returned food treated as wastage)
+//   deletedAt set → soft-deleted invoice (hidden from lists, preserved for audit)
+
+model Order {
+  id                  String      @id @default(cuid())
+  tenantId            String
+  branchId            String
+  customerId          String?     // CUSTOMER role; null for POS guest orders
+  staffId             String?     // WAITER who created the order (POS)
+  tableId             String?
+  orderType           OrderType
+  source              OrderSource
+  status              OrderStatus @default(PENDING)
+  subtotal            Float
+  discountAmount      Float       @default(0) // coupon model added in Restaurant Mgmt section
+  couponCode          String?
+  taxAmount           Float       @default(0)
+  totalAmount         Float                   // subtotal - discountAmount + taxAmount
+  cancelReason        String?
+  specialInstructions String?
+  prepStartedAt       DateTime?               // set when kitchen marks COOKING; drives green/yellow/red urgency
+  isHeld              Boolean     @default(false) // POS hold order
+  isReturn            Boolean     @default(false) // POS return/refund order
+  returnedFromOrderId String?                     // original order this return is against
+  deletedAt           DateTime?                   // soft delete; null = active
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  branch        Branch      @relation(fields: [branchId], references: [id])
+  customer      User?       @relation("CustomerOrders", fields: [customerId], references: [id])
+  staff         User?       @relation("StaffOrders", fields: [staffId], references: [id])
+  table         Table?      @relation(fields: [tableId], references: [id])
+  returnedFrom  Order?      @relation("OrderReturns", fields: [returnedFromOrderId], references: [id])
+  returns       Order[]     @relation("OrderReturns")
+  items         OrderItem[]
+  payments      Payment[]
+}
+
+// ─── OrderItem ────────────────────────────────────────────────────────────────
+
+model OrderItem {
+  id                 String  @id @default(cuid())
+  orderId            String
+  menuItemId         String
+  quantity           Int
+  unitPrice          Float   // snapshot of basePrice + modifiers at time of order
+  totalPrice         Float
+  specialInstruction String? // ingredient-level: "no onions", "extra sauce"
+  ageVerified        Boolean @default(false)
+  ageVerifiedBy      String? // staffId; set at POS or by delivery staff at door
+
+  order     Order               @relation(fields: [orderId], references: [id])
+  menuItem  MenuItem            @relation(fields: [menuItemId], references: [id])
+  modifiers OrderItemModifier[]
+}
+
+// ─── OrderItemModifier ────────────────────────────────────────────────────────
+
+model OrderItemModifier {
+  id               String @id @default(cuid())
+  orderItemId      String
+  modifierOptionId String
+  priceAdjustment  Float  // snapshot at time of order
+
+  orderItem      OrderItem      @relation(fields: [orderItemId], references: [id])
+  modifierOption ModifierOption @relation(fields: [modifierOptionId], references: [id])
+}
+
+// ─── Payment ──────────────────────────────────────────────────────────────────
+// Online orders: payment collected at checkout before confirmation.
+// POS cash/card: payment logged after order (expanded in POS section).
+
+model Payment {
+  id            String        @id @default(cuid())
+  orderId       String
+  method        PaymentMethod
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       // payment gateway reference (Stripe, bKash, etc.)
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+// ─── Reservation ──────────────────────────────────────────────────────────────
+// Full reservation system is MVP: online booking, walk-in entry, calendar view,
+// status management, and automated reminders (cron → push + email).
+
+model Reservation {
+  id         String            @id @default(cuid())
+  tenantId   String
+  branchId   String
+  customerId String?           // null for walk-in entries (staff-created)
+  tableId    String?           // assigned when party arrives
+  date       DateTime          // reservation date
+  time       String            // "19:00"
+  partySize  Int
+  status     ReservationStatus @default(PENDING)
+  notes      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  branch   Branch @relation(fields: [branchId], references: [id])
+  customer User?  @relation(fields: [customerId], references: [id])
+  table    Table? @relation(fields: [tableId], references: [id])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — RESTAURANT MANAGEMENT DASHBOARD
+// Merged: FloorPlan → Branch.floorPlanJson, VendorPayment → PurchaseOrder fields
+// Future Plan items skipped: upsell setup, discount/promo management, membership, loyalty, shift scheduling, hour tracking
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Ingredient ───────────────────────────────────────────────────────────────
+// Tracks raw stock (e.g. "chicken breast", "flour"). Deducted per Recipe on order confirm.
+// Low-stock alert fires when quantity < lowStockThreshold.
+
+model Ingredient {
+  id                String   @id @default(cuid())
+  tenantId          String
+  branchId          String
+  name              String
+  unit              String   // "kg" | "g" | "L" | "pcs"
+  quantity          Float    @default(0)
+  lowStockThreshold Float    @default(0)
+  unitCost          Float    @default(0) // updated each time a PurchaseOrder is RECEIVED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  branch        Branch              @relation(fields: [branchId], references: [id])
+  recipes       Recipe[]
+  purchaseItems PurchaseOrderItem[]
+}
+
+// ─── Recipe ───────────────────────────────────────────────────────────────────
+// One row per ingredient. Multiple rows per menu item = multiple ingredients.
+// Cooking instructions live on MenuItem.cookingInstructions.
+
+model Recipe {
+  menuItemId          String
+  ingredientId        String
+  quantity            Float   // amount consumed per 1 unit of the menu item
+  cookingInstructions String?
+
+  menuItem   MenuItem   @relation(fields: [menuItemId], references: [id])
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@id([menuItemId, ingredientId])
+}
+
+// ─── Supplier ─────────────────────────────────────────────────────────────────
+
+model Supplier {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  contactName  String?
+  phone        String?
+  email        String?
+  address      String?
+  leadTimeDays Int      @default(0) // used for restocking suggestion: avgDailyUsage × leadTimeDays
+  createdAt    DateTime @default(now())
+
+  purchaseOrders PurchaseOrder[]
+}
+
+// ─── PurchaseOrder ────────────────────────────────────────────────────────────
+// Vendor payment tracking merged in: isPaid, dueDate, paidAt (no separate table).
+
+model PurchaseOrder {
+  id         String              @id @default(cuid())
+  tenantId   String
+  branchId   String
+  supplierId String
+  status     PurchaseOrderStatus @default(PENDING)
+  isPaid     Boolean             @default(false)
+  dueDate    DateTime?
+  paidAt     DateTime?
+  notes      String?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  branch   Branch              @relation(fields: [branchId], references: [id])
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  items    PurchaseOrderItem[]
+}
+
+// ─── PurchaseOrderItem ────────────────────────────────────────────────────────
+
+model PurchaseOrderItem {
+  id              String @id @default(cuid())
+  purchaseOrderId String
+  ingredientId    String
+  quantity        Float
+  unitCost        Float  // cost at time of order; updates Ingredient.unitCost on RECEIVED
+  totalCost       Float
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  ingredient    Ingredient    @relation(fields: [ingredientId], references: [id])
+}
+
+// ─── Expense ──────────────────────────────────────────────────────────────────
+
+model Expense {
+  id        String          @id @default(cuid())
+  tenantId  String
+  branchId  String
+  category  ExpenseCategory
+  amount    Float
+  date      DateTime
+  recurring Boolean         @default(false)
+  notes     String?
+  createdAt DateTime        @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+}
+
+// ─── Payroll ──────────────────────────────────────────────────────────────────
+// Shift scheduling and hour tracking are Future Plan.
+// MVP: Manager manually enters amount and marks paid.
+
+model Payroll {
+  id          String    @id @default(cuid())
+  tenantId    String
+  branchId    String
+  staffId     String
+  periodStart DateTime
+  periodEnd   DateTime
+  amount      Float
+  isPaid      Boolean   @default(false)
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  staff  User   @relation(fields: [staffId], references: [id])
+}
+
+// ─── MenuSchedule ─────────────────────────────────────────────────────────────
+// Time-based availability for a category or item.
+// targetType + targetId is polymorphic — no FK enforced; validated at app layer.
+// If no schedule exists for an item → always available (controlled only by isActive).
+
+model MenuSchedule {
+  id         String             @id @default(cuid())
+  tenantId   String
+  branchId   String
+  targetType MenuScheduleTarget
+  targetId   String             // categoryId or menuItemId
+  label      String             // "Breakfast", "Lunch", "Summer Special"
+  startTime  String?            // "06:00" (24h); null for date-range-only schedules
+  endTime    String?            // "11:00"
+  daysOfWeek String[]           // ["MON","TUE",...]; empty = all days
+  startDate  DateTime?          // for seasonal items
+  endDate    DateTime?
+  createdAt  DateTime           @default(now())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — SALES ANALYTICS & REPORTING
+// No new models. All analytics computed from Order, OrderItem, Payment, Expense.
+// Email summaries → Tenant.accountantEmail (added to Tenant); cron job at midnight.
+// Future Plan items skipped: top-selling, customer insights, channel breakdown,
+//   payment breakdown, refunds/discounts report, custom filters, PDF/Excel export
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6 — FINANCIAL MANAGEMENT
+// No new models. All MVP features covered by existing models:
+//   P&L reports       → Order (revenue) + Expense (costs) + Recipe/Ingredient (COGS)
+//   Expense tracking  → Expense.category (ExpenseCategory enum)
+//   Vendor payments   → PurchaseOrder.isPaid, paidAt, dueDate
+//   Due reminders     → cron reads PurchaseOrder WHERE dueDate < today AND isPaid = false
+// Future Plan items skipped: visual charts, recurring/one-time distinction,
+//   salary calendar, tax reminders, goal tracking, invoice export
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 7 — KITCHEN DISPLAY SYSTEM (KDS)
+// No new models. All MVP features covered by field additions:
+//   Real-time display      → WebSocket NEW_ORDER event on Order
+//   Prep time tracking     → Order.prepStartedAt (set on COOKING)
+//   Status updates         → Order.status enum (COOKING / READY / SERVED)
+//   Urgency color coding   → derived: (now - prepStartedAt) vs MenuItem.estimatedPrepMinutes
+//   Sound/visual alerts    → WebSocket event — no DB model needed
+//   Cuisine color coding   → MenuItem.cuisineTag + Branch.cuisineColorMap Json
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 8 — WAITER DASHBOARD
+// No new models. One field added:
+//   Table occupancy / floor map → Table.status (AVAILABLE / OCCUPIED / RESERVED)
+//   Order input, KDS sync, bill print, status updates → Order, Payment, Branch.printerConfig, WebSocket
+// Future Plan skipped: tip logging, performance metrics
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 9 — ORDERING SYSTEM (INTERNAL)
+// No new models or fields. All MVP items covered by Order:
+//   Dine-in + table assignment → Order.orderType = DINE_IN, Order.tableId
+//   Takeaway                  → Order.orderType = TAKEAWAY
+//   Modification              → API checks Order.status = PENDING
+//   Cancellation with reason  → Order.cancelReason, Order.status = CANCELLED
+// Future Plan skipped: delivery dispatch workflow
+// ═══════════════════════════════════════════════════════════════════════════════
+// No new models. All MVP features covered by field additions:
+//   Real-time display      → WebSocket NEW_ORDER event on Order
+//   Prep time tracking     → Order.prepStartedAt (set on COOKING)
+//   Status updates         → Order.status enum (COOKING / READY / SERVED)
+//   Urgency color coding   → derived: (now - prepStartedAt) vs MenuItem.estimatedPrepMinutes
+//   Sound/visual alerts    → WebSocket event — no DB model needed
+//   Cuisine color coding   → MenuItem.cuisineTag + Branch.cuisineColorMap Json
+// ═══════════════════════════════════════════════════════════════════════════════
