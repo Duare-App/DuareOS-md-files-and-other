@@ -1,0 +1,654 @@
+# Qavyo POS - Loyalty Program System Design
+**Version:** 1.0
+
+---
+
+# Vision
+
+Qavyo's loyalty program is **not just a points system**.
+
+It is a **Restaurant Growth Engine** designed to help restaurants:
+
+- Increase repeat customers
+- Increase average order value (AOV)
+- Bring inactive customers back
+- Reduce customer acquisition cost
+- Increase customer lifetime value (CLV)
+- Reduce dependence on Facebook and Google Ads
+
+Every feature must directly help a restaurant make more money.
+
+> **Rule:** If a feature doesn't increase Revenue, Retention, or Customer Lifetime Value, it should not be built.
+
+---
+
+# Design Philosophy
+
+Unlike many loyalty platforms that focus on customers, qavyo focuses on **restaurant owners**.
+
+Customers earn rewards.
+
+Restaurant owners gain revenue.
+
+---
+
+# Development Roadmap
+
+---
+
+# Phase 1 — Core Loyalty (MVP of Loyalty Module)
+
+These features provide the highest return while keeping the system simple.
+
+---
+
+## 1. Points System
+
+### Purpose
+
+Encourage customers to return.
+
+### Features
+
+- Earn points based on spending
+- Restaurant decides earning rate
+- Current point balance
+- Point transaction history
+
+Example
+
+```
+Spend $1
+
+↓
+
+Earn 1 Point
+```
+
+### Why
+
+Customers already understand points.
+
+No learning required.
+
+### Why Not More Complex Rules?
+
+Most restaurant owners never configure complicated earning formulas.
+
+Simple systems are used.
+
+Complex systems are ignored.
+
+---
+
+## 2. POS Redemption
+
+Customers can redeem points directly during checkout.
+
+Cashier screen
+
+```
+Customer
+
+John Smith
+
+Points
+
+580
+
+Redeem Available
+
+$8
+
+[ Redeem ]
+
+[ Skip ]
+```
+
+### Why
+
+If redemption isn't available during billing, staff forget to offer it.
+
+Redemption rate drops dramatically.
+
+---
+
+## 3. Referral Program
+
+Customer invites a friend.
+
+Friend places first completed order.
+
+Both receive rewards.
+
+Restaurant configures:
+
+- Referrer reward
+- New customer reward
+
+### Why
+
+Restaurants acquire customers without paying advertising platforms.
+
+---
+
+## 4. Welcome Reward
+
+Example
+
+```
+First Order
+
+↓
+
+100 Bonus Points
+```
+
+### Why
+
+Encourages customer registration.
+
+Improves first purchase conversion.
+
+---
+
+## 5. Birthday Reward
+
+Restaurant chooses:
+
+- Free Dessert
+- Free Drink
+- Bonus Points
+- Percentage Discount
+- Fixed Discount
+
+### Why
+
+Birthday promotions have one of the highest redemption rates.
+
+Very inexpensive feature to develop.
+
+High customer satisfaction.
+
+---
+
+## 6. Point Expiry
+
+Restaurant chooses:
+
+- Never expire
+- Expire after X months of inactivity
+
+### Why
+
+Unlimited points become a financial liability.
+
+Expiry motivates customers to return.
+
+---
+
+# Phase 2 — Revenue Optimization
+
+---
+
+## 1. Double Point Campaigns
+
+Examples
+
+- Tuesdays
+- Lunch Hours
+- Delivery Orders
+- Weekend Campaigns
+
+### Why
+
+Restaurants can increase sales during slow periods.
+
+Instead of discounting everything, they reward targeted behavior.
+
+---
+
+## 2. Category Multipliers
+
+Example
+
+Coffee
+
+2×
+
+Desserts
+
+3×
+
+Beverages
+
+1×
+
+### Why
+
+Restaurants usually have higher profit margins on drinks and desserts.
+
+This increases Average Order Value.
+
+---
+
+## 3. Minimum Spend Requirement
+
+Example
+
+Spend $25
+
+↓
+
+Earn Points
+
+### Why
+
+Prevents abuse from very small purchases.
+
+Increases basket size.
+
+---
+
+## 4. Maximum Redemption Limit
+
+Example
+
+Points may cover
+
+Maximum 20%
+
+of order total.
+
+### Why
+
+Protects restaurant profit margins.
+
+---
+
+## 5. Referral Analytics
+
+Show
+
+- Total Referrals
+- Successful Referrals
+- Conversion Rate
+- Revenue Generated
+
+### Why
+
+Owners need to know if referrals actually generate revenue.
+
+---
+
+## 6. Digital Stamp Cards ✅
+
+Examples
+
+- Buy 10 coffees → Get 1 Free
+- Buy 8 burgers → Get 1 Free
+- Buy 5 pizzas → Free garlic bread
+- Buy 12 bubble teas → Get 1 Free
+
+### Why Include It?
+
+Unlike generic points, stamp cards are **extremely effective for repeat-purchase businesses** such as:
+
+- Coffee shops
+- Cafés
+- Bubble tea stores
+- Bakeries
+- Ice cream shops
+- Juice bars
+- Fast food restaurants
+
+Customers easily understand visual progress.
+
+Example
+
+```
+☕ ☕ ☕ ☕ ☕
+☐ ☐ ☐ ☐ ☐
+
+5 / 10
+```
+
+Psychologically, customers are highly motivated to complete a partially filled card (the **goal-gradient effect**), making stamp cards one of the most effective loyalty tools.
+
+### Implementation
+
+Restaurants can create unlimited stamp campaigns.
+
+Each campaign defines:
+
+- Eligible products
+- Required purchases
+- Reward
+- Validity period
+- Expiry
+- Maximum active campaigns
+
+---
+
+# Phase 3 — Intelligent Loyalty
+
+This is where Qavyo becomes difficult to replace.
+
+---
+
+## 1. Customer Segmentation
+
+Automatically classify customers.
+
+No manual setup.
+
+Segments
+
+- New
+- Returning
+- VIP
+- High Spender
+- Frequent Visitor
+- At Risk
+- Lost Customer
+
+### Why
+
+Restaurant owners don't want to build customer lists.
+
+The software should do it automatically.
+
+---
+
+## 2. Automated Campaigns
+
+Examples
+
+No visit in 30 days
+
+↓
+
+Send Coupon
+
+Birthday Tomorrow
+
+↓
+
+Send Reward
+
+Spend over $500
+
+↓
+
+Upgrade Tier
+
+### Why
+
+Restaurant owners shouldn't manually send promotions.
+
+Automation increases retention.
+
+---
+
+## 3. Smart Recommendations
+
+Example
+
+Customer usually orders burgers.
+
+System recommends
+
+New Burger.
+
+Not random promotions.
+
+Relevant promotions.
+
+### Why
+
+Relevant offers convert significantly better.
+
+---
+
+## 4. Visit Challenges
+
+Examples
+
+Visit 5 Times
+
+↓
+
+Free Coffee
+
+Spend $200 This Month
+
+↓
+
+Double Points
+
+### Why
+
+Gamification increases customer engagement without relying on discounts.
+
+---
+
+## 5. Loyalty Tiers
+
+Restaurant creates custom tiers.
+
+Suggested
+
+- Bronze
+- Silver
+- Gold
+- Platinum
+- Diamond
+
+Each tier may configure
+
+- Point Multiplier
+- Birthday Bonus
+- Exclusive Rewards
+- Free Delivery
+- Priority Reservations
+- Exclusive Promotions
+
+### Why
+
+Creates long-term loyalty.
+
+Customers avoid losing status.
+
+---
+
+# Restaurant Analytics Dashboard
+
+The dashboard should answer business questions, not just show point balances.
+
+---
+
+## Customer Health
+
+- Active Loyalty Members
+- Repeat Purchase Rate
+- Average Visits
+- Average Days Between Visits
+
+---
+
+## Revenue
+
+- Loyalty Revenue
+- Non-Loyalty Revenue
+- Customer Lifetime Value
+- Average Order Value
+- Incremental Revenue
+
+---
+
+## Reward Analytics
+
+- Points Issued
+- Points Redeemed
+- Redemption Rate
+- Outstanding Point Liability
+- Expiring Points
+
+---
+
+## Campaign Analytics
+
+- Birthday Campaign ROI
+- Referral ROI
+- Welcome Reward Conversion
+- Double Point Campaign Performance
+- Stamp Card Completion Rate
+- Coupon Redemption Rate
+
+---
+
+## Customer Behavior
+
+- Top Spenders
+- Customers At Risk
+- Lost Customers
+- Best Loyalty Tier
+- Most Profitable Reward
+
+---
+
+# Customer Health Score (Qavyo Exclusive)
+
+Every customer receives a score between
+
+0 — 100
+
+Calculated using
+
+- Recency
+- Frequency
+- Monetary Value
+- Loyalty Activity
+- Referral Activity
+
+Categories
+
+90–100
+
+Champion
+
+70–89
+
+Loyal
+
+50–69
+
+Needs Attention
+
+30–49
+
+At Risk
+
+0–29
+
+Lost
+
+### Why
+
+Instead of reading reports, owners immediately know which customers need attention.
+
+---
+
+# Security
+
+Only Owner and Manager may
+
+- Adjust points manually
+- Delete loyalty transactions
+- Change campaigns
+
+Every action must be logged.
+
+Audit Log
+
+- User ID
+- Timestamp
+- Old Value
+- New Value
+- Reason
+
+---
+
+# Features Intentionally Excluded
+
+## Daily Login Rewards
+
+Reason
+
+Restaurant customers don't open restaurant apps every day.
+
+Adds complexity without increasing revenue.
+
+---
+
+## Spin the Wheel
+
+Reason
+
+Encourages discount hunters rather than loyal customers.
+
+Poor long-term retention.
+
+---
+
+## Blockchain / NFT Rewards
+
+Reason
+
+No practical business value for restaurants.
+
+High complexity.
+
+Low demand.
+
+---
+
+## Complex Mission Trees
+
+Example
+
+Buy Sushi Monday
+
+↓
+
+Burger Tuesday
+
+↓
+
+Coffee Wednesday
+
+↓
+
+Receive Reward
+
+Reason
+
+Too difficult for restaurant owners to configure.
+
+Too confusing for customers.
+
+---
+
+# Final Philosophy
+
+Qavyo's loyalty module is not designed to give away discounts.
+
+It is designed to create profitable customer habits.
+
+Every feature should answer one question:
+
+> **"Will this help the restaurant increase revenue, retention, or customer lifetime value?"**
+
+If the answer is yes, build it.
+
+If the answer is no, don't.
